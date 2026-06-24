@@ -1,31 +1,34 @@
-"""Test bootstrap — load the single-file plugin with NO protoAgent host present.
+"""Test bootstrap — load the plugin as a synthetic package with NO protoAgent host.
 
-``__init__.py`` has no host imports, so executing it standalone is safe. A
-``FakeRegistry`` stands in for the host registry so ``register()`` can be smoke-tested
-and the contributed MCP factory exercised directly.
+The plugin is multi-module (`from .bridge import ...`), so we register a synthetic
+package whose __path__ is the repo root, letting relative imports resolve standalone.
+__init__.py keeps host/heavy imports inside register(), so executing it here is safe.
 """
 
 from __future__ import annotations
 
 import importlib.util
+import sys
 from pathlib import Path
 
 import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
+PKG = "palmier_pro"
 
-
-def _load_plugin():
-    spec = importlib.util.spec_from_file_location("palmier_pro_under_test", ROOT / "__init__.py")
-    assert spec and spec.loader
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+if PKG not in sys.modules:
+    _spec = importlib.util.spec_from_file_location(
+        PKG, ROOT / "__init__.py", submodule_search_locations=[str(ROOT)]
+    )
+    assert _spec and _spec.loader
+    _mod = importlib.util.module_from_spec(_spec)
+    sys.modules[PKG] = _mod
+    _spec.loader.exec_module(_mod)
 
 
 @pytest.fixture
 def plugin():
-    return _load_plugin()
+    return sys.modules[PKG]
 
 
 class FakeRegistry:
@@ -36,9 +39,9 @@ class FakeRegistry:
         self.tools: list = []
         self.routers: list = []
         self.surfaces: list = []
-        self.mcp_servers: list = []
         self.skill_dirs: list = []
         self.subagents: list = []
+        self.mcp_servers: list = []
 
     def register_tool(self, t):
         self.tools.append(t)
@@ -50,7 +53,7 @@ class FakeRegistry:
         self.routers.append((prefix, router))
 
     def register_surface(self, start, stop=None, name=None, reload=None):
-        self.surfaces.append(name)
+        self.surfaces.append({"start": start, "stop": stop, "name": name})
 
     def register_mcp_server(self, factory):
         self.mcp_servers.append(factory)

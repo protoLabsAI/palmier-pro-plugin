@@ -1,4 +1,5 @@
-# Test-only deps. The plugin module imports nothing beyond the stdlib, so the suite
-# is tiny. The plugin adds NO runtime pip deps.
+# Test-only deps. The plugin's `mcp` usage is lazy (host-provided at runtime), so
+# the suite runs without it. langchain-core is needed to build the tools.
 pyyaml>=6
 pytest>=8
+langchain-core>=0.2

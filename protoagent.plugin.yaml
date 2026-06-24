@@ -4,12 +4,13 @@ id: palmier_pro
 name: Palmier Pro (drive the macOS video editor)
 version: 0.1.0
 description: >-
-  Connect your fleet to Palmier Pro, the AI-native macOS video editor. Registers the
-  editor's local MCP server so the agent can read and edit the timeline, import media,
-  search, manage captions, and — if you choose — drive in-app generation. Connects via
-  the mcp-remote stdio proxy (the same one Palmier ships in its .mcpb), so it needs
-  node/npx on the host PATH. Ships a skill teaching the workflow and the policy of
-  generating media on your own infra and importing it (no Palmier account/credits).
+  Connect your fleet to Palmier Pro, the AI-native macOS video editor. Holds ONE warm,
+  self-reconnecting MCP session to the editor (a background surface over the mcp-remote
+  proxy Palmier ships in its .mcpb) and exposes it through three tools — palmier (invoke
+  any editor tool), palmier_tools (live catalog + schemas), palmier_status. The warm
+  session means tool calls run in milliseconds instead of respawning a subprocess each
+  time. Needs node/npx on the host PATH. Ships a skill teaching the workflow and the
+  policy of generating media on your own infra and importing it (no Palmier account).
   Requires Palmier Pro running on the SAME machine with a project open.
 enabled: false                       # SHIP DISABLED — enabling is the operator's trust decision
 repository: https://github.com/protoLabsAI/palmier-pro-plugin

@@ -1,11 +1,16 @@
-"""Host-free tests for the palmier_pro plugin: registration, the MCP factory, and
-manifest/pyproject coherence."""
+"""Host-free tests: registration, the warm-session bridge, the agent tools, and
+manifest/pyproject coherence. No live editor and no `mcp` import required —
+session I/O is exercised separately against a running editor."""
 
 from __future__ import annotations
 
+import asyncio
+import json
 import tomllib
+import types
 from pathlib import Path
 
+import pytest
 import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -15,74 +20,118 @@ def _manifest() -> dict:
     return yaml.safe_load((ROOT / "protoagent.plugin.yaml").read_text())
 
 
-def test_register_contributes_mcp_and_skill(plugin, make_registry):
-    reg = make_registry({"mcp_url": "http://127.0.0.1:19789/mcp", "connect": True})
+# ── registration ─────────────────────────────────────────────────────────────
+def test_register_contributes_surface_tools_skill(plugin, make_registry):
+    reg = make_registry({"connect": True})
     plugin.register(reg)
-    assert len(reg.mcp_servers) == 1
+    assert [s["name"] for s in reg.surfaces] == ["palmier-pro-bridge"]
+    assert sorted(t.name for t in reg.tools) == ["palmier", "palmier_status", "palmier_tools"]
     assert reg.skill_dirs == ["skills"]
-    assert reg.tools == []  # the editor's tools come over MCP, not from this plugin
 
 
-def test_factory_returns_mcp_remote_stdio_entry(plugin, make_registry):
-    reg = make_registry({"mcp_url": "http://127.0.0.1:19789/mcp", "connect": True})
-    plugin.register(reg)
-    # The host calls the factory with the live LangGraphConfig; we don't use it.
-    entry = reg.mcp_servers[0](None)
-    assert entry == {
-        "name": "palmier-pro",
-        "transport": "stdio",
-        "command": "npx",
-        "args": [
-            "-y",
-            "mcp-remote",
-            "http://127.0.0.1:19789/mcp",
-            "--allow-http",
-            "--transport",
-            "http-only",
-        ],
-    }
+# ── bridge ───────────────────────────────────────────────────────────────────
+def test_bridge_defaults():
+    from palmier_pro.bridge import DEFAULT_MCP_URL, EditorBridge
+
+    b = EditorBridge({})
+    assert b.url == DEFAULT_MCP_URL
+    assert b.command == "npx"
+    assert b.enabled is True
 
 
-def test_factory_off_when_not_connected(plugin, make_registry):
-    reg = make_registry({"connect": False})
-    plugin.register(reg)
-    assert reg.mcp_servers[0](None) is None
+def test_bridge_disabled_call_errors():
+    from palmier_pro.bridge import BridgeError, EditorBridge
+
+    b = EditorBridge({"connect": False})
+    with pytest.raises(BridgeError):
+        asyncio.run(b.call("get_timeline", {}))
 
 
-def test_factory_honors_custom_url(plugin, make_registry):
-    reg = make_registry({"mcp_url": "http://127.0.0.1:5000/mcp", "connect": True})
-    plugin.register(reg)
-    assert reg.mcp_servers[0](None)["args"][2] == "http://127.0.0.1:5000/mcp"
+def test_bridge_not_started_call_errors():
+    from palmier_pro.bridge import BridgeError, EditorBridge
+
+    b = EditorBridge({"connect": True})  # enabled, but start() never called
+    with pytest.raises(BridgeError):
+        asyncio.run(b.call("get_timeline", {}))
 
 
-def test_factory_defaults_url_when_missing(plugin, make_registry):
-    reg = make_registry({"connect": True})  # no mcp_url
-    plugin.register(reg)
-    assert "http://127.0.0.1:19789/mcp" in reg.mcp_servers[0](None)["args"]
+def test_result_to_text():
+    from palmier_pro.bridge import _result_to_text
+
+    def block(**kw):
+        return types.SimpleNamespace(**kw)
+
+    ok = types.SimpleNamespace(
+        content=[block(type="text", text="hello"), block(type="image")], isError=False
+    )
+    assert _result_to_text(ok) == "hello\n[image omitted]"
+
+    err = types.SimpleNamespace(content=[block(type="text", text="bad input")], isError=True)
+    assert _result_to_text(err) == "ERROR: bad input"
 
 
-def test_factory_honors_proxy_command_override(plugin, make_registry):
-    reg = make_registry({"connect": True, "proxy_command": "/opt/node/bin/npx"})
-    plugin.register(reg)
-    assert reg.mcp_servers[0](None)["command"] == "/opt/node/bin/npx"
+# ── tools ────────────────────────────────────────────────────────────────────
+class _FakeBridge:
+    url = "http://127.0.0.1:19789/mcp"
+    connected = True
+    instructions = ""
+
+    def __init__(self, catalog=None, connected=True):
+        self.tools_catalog = catalog if catalog is not None else []
+        self.connected = connected
+
+    async def call(self, name, arguments):
+        return f"called {name} {arguments}"
 
 
-def test_register_survives_empty_config(plugin, make_registry):
-    reg = make_registry(None)
-    plugin.register(reg)
-    # default connect=True, default url, default npx command
-    entry = reg.mcp_servers[0](None)
-    assert entry["command"] == "npx"
-    assert "http://127.0.0.1:19789/mcp" in entry["args"]
+def _tools(bridge):
+    from palmier_pro.tools import build_tools
+
+    return {t.name: t for t in build_tools(bridge)}
 
 
+def test_palmier_routes_through_bridge():
+    tools = _tools(_FakeBridge())
+    out = asyncio.run(
+        tools["palmier"].ainvoke({"tool_name": "get_timeline", "arguments": {"a": 1}})
+    )
+    assert out == "called get_timeline {'a': 1}"
+
+
+def test_palmier_tools_catalog_and_single_schema():
+    cat = [{"name": "add_clips", "description": "adds clips", "inputSchema": {"type": "object"}}]
+    tools = _tools(_FakeBridge(catalog=cat))
+    listing = json.loads(asyncio.run(tools["palmier_tools"].ainvoke({})))
+    assert listing["connected"] is True
+    assert listing["tools"] == [{"name": "add_clips", "description": "adds clips"}]
+    one = json.loads(asyncio.run(tools["palmier_tools"].ainvoke({"tool_name": "add_clips"})))
+    assert one["inputSchema"] == {"type": "object"}
+
+
+def test_palmier_tools_when_offline():
+    tools = _tools(_FakeBridge(catalog=[], connected=False))
+    listing = json.loads(asyncio.run(tools["palmier_tools"].ainvoke({})))
+    assert listing["connected"] is False
+    assert listing["tools"] == []
+    assert "note" in listing
+
+
+def test_palmier_status():
+    tools = _tools(_FakeBridge(catalog=[{"name": "x", "description": "", "inputSchema": {}}]))
+    st = json.loads(asyncio.run(tools["palmier_status"].ainvoke({})))
+    assert st["connected"] is True
+    assert st["tool_count"] == 1
+    assert st["url"].endswith("/mcp")
+
+
+# ── manifest / packaging ─────────────────────────────────────────────────────
 def test_manifest_required_fields():
     m = _manifest()
     for key in ("id", "name", "version", "description"):
         assert m.get(key), f"manifest missing {key}"
-    assert m["enabled"] is False  # ships disabled
+    assert m["enabled"] is False
     assert m["id"] == "palmier_pro"
-    assert m["capabilities"]["network"] == ["127.0.0.1:19789"]  # loopback only
+    assert m["capabilities"]["network"] == ["127.0.0.1:19789"]
 
 
 def test_manifest_version_matches_pyproject():
