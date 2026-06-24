@@ -7,10 +7,13 @@ captions — and ships a skill that teaches the workflow.
 
 ## What it contributes
 
-- **An MCP server** (`register_mcp_server`) pointing at the editor's loopback endpoint
-  `http://127.0.0.1:19789/mcp` over streamable-HTTP. The editor's ~30 tools
-  (`get_timeline`, `get_media`, `add_clips`, `import_media`, `search_media`,
-  `add_captions`, …) become available to the agent. No Node shim, no `.mcpb`.
+- **An MCP server** (`register_mcp_server`) for the editor's loopback endpoint
+  `http://127.0.0.1:19789/mcp`. The editor's 35 tools (`get_timeline`, `get_media`,
+  `add_clips`, `import_media`, `search_media`, `add_captions`, …) become available to
+  the agent. Connection is via the **`mcp-remote` stdio proxy** — the same one Palmier
+  ships in its `.mcpb`. The editor's HTTP server builds a fresh MCP server per TCP
+  connection, which a stateless `streamable_http` client trips over (tool calls 400);
+  `mcp-remote` holds one persistent connection, so it works reliably.
 - **A skill** (`driving-palmier-pro`) — the fleet-level workflow, including the policy
   of **generating media on your own infra and importing it** rather than using
   Palmier's paid hosted generation.
@@ -21,6 +24,9 @@ captions — and ships a skill that teaches the workflow.
   loopback-only (`127.0.0.1`), so the agent driving it must be co-located (or you must
   tunnel to that Mac's port 19789). Enable the server in Palmier Pro under
   **Settings ▸ Agent ▸ MCP Server**.
+- **`node` / `npx` on the host's PATH.** The plugin launches `npx -y mcp-remote …`;
+  the first run fetches `mcp-remote`. If `npx` isn't on the host PATH, set
+  `proxy_command` to an absolute path.
 
 ## Install
 
@@ -37,6 +43,7 @@ Then enable it (`enable_plugin("palmier_pro")` or the console Plugins panel). Sh
 |---|---|---|
 | `mcp_url` | `http://127.0.0.1:19789/mcp` | The editor's loopback endpoint. Change only if you tunnel to another host. |
 | `connect` | `true` | Register the server. Toggle off to disconnect without disabling the plugin. |
+| `proxy_command` | `npx` | Launcher for `mcp-remote`. Set to an absolute path if `npx` isn't on the host PATH. |
 
 ## Generation policy
 

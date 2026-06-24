@@ -29,7 +29,19 @@ def _mcp_factory(plugin_cfg: dict):
         url = (plugin_cfg.get("mcp_url") or DEFAULT_MCP_URL).strip()
         if not url:
             return None
-        return {"name": SERVER_NAME, "transport": "streamable_http", "url": url}
+        command = (plugin_cfg.get("proxy_command") or "npx").strip()
+        # The editor's HTTP MCP server builds a fresh MCP Server per TCP connection,
+        # so a stateless streamable_http client 400s on tool calls (init and the call
+        # land on different connections). mcp-remote — the proxy Palmier ships in its
+        # .mcpb — holds one persistent connection per process, so we route
+        # stdio -> mcp-remote -> the loopback HTTP endpoint. Requires node/npx on the
+        # host PATH; first run fetches mcp-remote.
+        return {
+            "name": SERVER_NAME,
+            "transport": "stdio",
+            "command": command,
+            "args": ["-y", "mcp-remote", url, "--allow-http", "--transport", "http-only"],
+        }
 
     return factory
 

@@ -23,15 +23,23 @@ def test_register_contributes_mcp_and_skill(plugin, make_registry):
     assert reg.tools == []  # the editor's tools come over MCP, not from this plugin
 
 
-def test_factory_returns_streamable_http_entry(plugin, make_registry):
+def test_factory_returns_mcp_remote_stdio_entry(plugin, make_registry):
     reg = make_registry({"mcp_url": "http://127.0.0.1:19789/mcp", "connect": True})
     plugin.register(reg)
     # The host calls the factory with the live LangGraphConfig; we don't use it.
     entry = reg.mcp_servers[0](None)
     assert entry == {
         "name": "palmier-pro",
-        "transport": "streamable_http",
-        "url": "http://127.0.0.1:19789/mcp",
+        "transport": "stdio",
+        "command": "npx",
+        "args": [
+            "-y",
+            "mcp-remote",
+            "http://127.0.0.1:19789/mcp",
+            "--allow-http",
+            "--transport",
+            "http-only",
+        ],
     }
 
 
@@ -44,20 +52,28 @@ def test_factory_off_when_not_connected(plugin, make_registry):
 def test_factory_honors_custom_url(plugin, make_registry):
     reg = make_registry({"mcp_url": "http://127.0.0.1:5000/mcp", "connect": True})
     plugin.register(reg)
-    assert reg.mcp_servers[0](None)["url"] == "http://127.0.0.1:5000/mcp"
+    assert reg.mcp_servers[0](None)["args"][2] == "http://127.0.0.1:5000/mcp"
 
 
 def test_factory_defaults_url_when_missing(plugin, make_registry):
     reg = make_registry({"connect": True})  # no mcp_url
     plugin.register(reg)
-    assert reg.mcp_servers[0](None)["url"] == "http://127.0.0.1:19789/mcp"
+    assert "http://127.0.0.1:19789/mcp" in reg.mcp_servers[0](None)["args"]
+
+
+def test_factory_honors_proxy_command_override(plugin, make_registry):
+    reg = make_registry({"connect": True, "proxy_command": "/opt/node/bin/npx"})
+    plugin.register(reg)
+    assert reg.mcp_servers[0](None)["command"] == "/opt/node/bin/npx"
 
 
 def test_register_survives_empty_config(plugin, make_registry):
     reg = make_registry(None)
     plugin.register(reg)
-    # default connect=True, default url
-    assert reg.mcp_servers[0](None)["url"] == "http://127.0.0.1:19789/mcp"
+    # default connect=True, default url, default npx command
+    entry = reg.mcp_servers[0](None)
+    assert entry["command"] == "npx"
+    assert "http://127.0.0.1:19789/mcp" in entry["args"]
 
 
 def test_manifest_required_fields():
