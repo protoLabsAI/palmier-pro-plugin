@@ -1,0 +1,4 @@
+# Test-only deps. The plugin module imports nothing beyond the stdlib, so the suite
+# is tiny. The plugin adds NO runtime pip deps.
+pyyaml>=6
+pytest>=8

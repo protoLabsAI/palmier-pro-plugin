@@ -1,0 +1,30 @@
+# protoagent.plugin.yaml — DATA ONLY (the host reads this without importing code).
+# Keep `version` in lockstep with pyproject.toml (tests/test_palmier_pro.py asserts it).
+id: palmier_pro
+name: Palmier Pro (drive the macOS video editor)
+version: 0.1.0
+description: >-
+  Connect your fleet to Palmier Pro, the AI-native macOS video editor. Registers the
+  editor's local MCP server (loopback streamable-HTTP) so the agent can read and edit
+  the timeline, import media, search, manage captions, and — if you choose — drive
+  in-app generation. Ships a skill that teaches the workflow and the policy of
+  generating media on your own infra and importing it (no Palmier account/credits).
+  Requires Palmier Pro running on the SAME machine with a project open.
+enabled: false                       # SHIP DISABLED — enabling is the operator's trust decision
+repository: https://github.com/protoLabsAI/palmier-pro-plugin
+min_protoagent_version: "0.27.0"
+
+config_section: palmier_pro
+config:
+  mcp_url: "http://127.0.0.1:19789/mcp"   # the editor's loopback endpoint
+  connect: true                            # register the server (toggle off to disconnect)
+settings:
+  - { key: mcp_url, label: "Palmier Pro MCP URL", type: string, description: "The editor's loopback MCP endpoint. Default http://127.0.0.1:19789/mcp. Change only if you tunnel to another host." }
+  - { key: connect, label: "Connect to Palmier Pro", type: bool, description: "Register the editor's MCP server so its tools reach the agent. Turn off to disconnect without disabling the plugin." }
+
+# Declarative transparency (shown in the console). Loopback only — no off-box network.
+capabilities:
+  network: ["127.0.0.1:19789"]
+  filesystem: none
+
+keywords: [video, editor, timeline, mcp, palmier, creative]
